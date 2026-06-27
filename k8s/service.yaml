@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: tacs-log-streamer
+  labels:
+    app: tacs-log-streamer
+spec:
+  type: ClusterIP
+  selector:
+    app: tacs-log-streamer
+  ports:
+  - name: http
+    port: 80
+    targetPort: 8000
+    protocol: TCP

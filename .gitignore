@@ -1,3 +1,6 @@
+#k8s
+secret.yaml
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

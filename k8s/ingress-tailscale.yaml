@@ -1,0 +1,22 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: tacs-log-streamer-tailscale
+  labels:
+    app: tacs-log-streamer
+spec:
+  ingressClassName: tailscale
+  rules:
+  - host: tacs-log-streamer
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: tacs-log-streamer
+            port:
+              number: 80
+  tls:
+    - hosts:
+        - tacs-log-streamer
