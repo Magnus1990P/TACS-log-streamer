@@ -28,7 +28,7 @@ from datetime import datetime
 from pathlib import Path
 
 # OAuth2 and JWT handling
-from jose import JWTError, jwt
+from jose import JWTError, jwk, jwt
 from passlib.context import CryptContext
 
 # Authlib for OAuth2 client
@@ -181,12 +181,47 @@ def verify_internal_api_key(api_key: Optional[str] = None, request: Optional[Req
     return True
 
 
-async def verify_token(token: str) -> User:
+async def verify_token(token: str, provider: Optional[str] = None) -> User:
     """
-    Verify JWT token and return user info.
+    Verify JWT token directly from OAuth provider using their JWKS endpoint.
+    Supports both Kanidm (ES256) and Microsoft (RS256).
     """
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        # Determine which JWKS endpoint and issuer to use
+        if provider == "kanidm":
+            jwks_url = config.get('KANIDM_JWKS_URI', 'https://kanidm.tailb89add.ts.net/oauth2/jwks')
+            issuer = config.get('KANIDM_ISSUER', 'https://kanidm.tailb89add.ts.net')
+            valid_algorithms = ["ES256"]
+        elif provider == "microsoft":
+            jwks_url = config.get('MICROSOFT_JWKS_URI', 'https://login.microsoftonline.com/common/discovery/v2.0/keys')
+            issuer = config.get('MICROSOFT_ISSUER', 'https://login.microsoftonline.com/{tenantid}/v2.0')
+            valid_algorithms = ["RS256"]
+        else:
+            # Fallback to local key for backward compatibility (HS256)
+            jwks_url = None
+            issuer = None
+            valid_algorithms = [ALGORITHM]
+        
+        if jwks_url:
+            # Fetch remote JWKS and verify with correct audience
+            if provider == "kanidm":
+                audience = config.get('KANIDM_CLIENT_ID', 'tacs-log-streamer')
+            elif provider == "microsoft":
+                audience = config.get('MICROSOFT_CLIENT_ID', '')
+            else:
+                audience = None
+            
+            payload = jwt.decode(
+                token,
+                jwk.fetch_remote_jwks(jwks_url),
+                algorithms=valid_algorithms,
+                issuer=issuer,
+                audience=audience,
+            )
+        else:
+            # Legacy HS256 verification with local key
+            payload = jwt.decode(token, SECRET_KEY, algorithms=valid_algorithms)
+        
         user_id: str = payload.get("sub")
         if user_id is None:
             raise HTTPException(
@@ -207,9 +242,9 @@ async def verify_token(token: str) -> User:
         return User(
             id=user_id,
             name=payload.get("name"),
-            email=payload.get("email"),
+            email=payload.get("email") or payload.get("preferred_username"),
             picture=payload.get("picture"),
-            provider=payload.get("provider")
+            provider=provider or payload.get("provider")
         )
         
     except JWTError as e:
@@ -221,7 +256,30 @@ async def verify_token(token: str) -> User:
 
 
 async def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
-    """Dependency to get the current authenticated user"""
+    """Dependency to get the current authenticated user from external OAuth provider"""
+    # Try to auto-detect provider from token issuer
+    try:
+        # Peek at the token to get issuer without full verification
+        unpadded = token.split('.')
+        if len(unpadded) >= 2:
+            # Decode payload (base64url)
+            import base64
+            payload_b64 = unpadded[1]
+            # Add padding
+            payload_b64 += '=' * (4 - len(payload_b64) % 4)
+            payload_json = base64.urlsafe_b64decode(payload_b64).decode('utf-8')
+            import json
+            payload_data = json.loads(payload_json)
+            issuer = payload_data.get('iss', '')
+            
+            if 'kanidm' in issuer or 'tailb89add' in issuer:
+                return await verify_token(token, provider="kanidm")
+            elif 'microsoft' in issuer or 'login.microsoftonline' in issuer:
+                return await verify_token(token, provider="microsoft")
+    except:
+        pass
+    
+    # Fallback to legacy HS256 verification
     return await verify_token(token)
 
 
