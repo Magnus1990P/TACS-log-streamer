@@ -1,0 +1,98 @@
+version: '3.8'
+
+# OAuth2 Log Streamer - Docker Compose with Nginx Reverse Proxy
+# 
+# Services:
+# - app: FastAPI server with Microsoft + Kanidm OAuth2
+# - nginx: Reverse proxy that blocks /internal* endpoints from public access
+#
+# Usage:
+#   Development (HTTP only):
+#     docker-compose up -d
+#
+#   Production (HTTPS):
+#     1. Create ssl/ directory with your certificates:
+#        - ssl/fullchain.pem
+#        - ssl/privkey.pem
+#     2. docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Access:
+#   - Web UI: http://localhost or https://your-domain.com
+#   - Health: http://localhost/health
+#   - Internal API (internal network only): http://app:8000/internal
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: oidc-log-streamer
+    restart: unless-stopped
+    environment:
+      - PORT=8000
+      - HOST=0.0.0.0
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-your-secret-key-change-me}
+      - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
+      - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES:-60}
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY:-}
+      - INTERNAL_API_KEY_HEADER=${INTERNAL_API_KEY_HEADER:-X-Internal-API-Key}
+      # Microsoft OAuth2
+      - MICROSOFT_CLIENT_ID=${MICROSOFT_CLIENT_ID:-}
+      - MICROSOFT_CLIENT_SECRET=${MICROSOFT_CLIENT_SECRET:-}
+      # Kanidm OAuth2
+      - KANIDM_CLIENT_ID=${KANIDM_CLIENT_ID:-}
+      - KANIDM_CLIENT_SECRET=${KANIDM_CLIENT_SECRET:-}
+      - KANIDM_AUTHORIZE_URL=${KANIDM_AUTHORIZE_URL:-}
+      - KANIDM_TOKEN_URL=${KANIDM_TOKEN_URL:-}
+      - KANIDM_JWKS_URI=${KANIDM_JWKS_URI:-}
+      - KANIDM_ISSUER=${KANIDM_ISSUER:-}
+    volumes:
+      # Mount templates and static files (for development hot-reload)
+      - ./app/templates:/app/templates:ro
+      - ./app/static:/app/static:ro
+    expose:
+      - "8000"
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/health', timeout=2).raise_for_status()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: oidc-log-streamer-nginx
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      - INTERNAL_ALLOWED_IP=${INTERNAL_ALLOWED_IP:-}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      # Custom nginx configuration (writable for envsubst processing)
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      # SSL certificates (create ssl/ directory and add certs for HTTPS)
+      - ./ssl:/etc/nginx/ssl:ro
+      # Optional: Custom server blocks
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      # Static files (optional: serve directly from nginx)
+      - ./app/static:/app/static:ro
+      # Entrypoint script (executed before nginx starts)
+      - ./scripts/nginx-entrypoint.sh:/docker-entrypoint.d/20-envsubst.sh:ro
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+networks:
+  backend:
+    driver: bridge
+    internal: false

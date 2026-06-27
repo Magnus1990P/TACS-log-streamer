@@ -1,0 +1,26 @@
+version: '3.8'
+
+# Development override for docker-compose
+# This file is automatically loaded by docker-compose when running in development
+# Usage: docker-compose up -d
+
+services:
+  app:
+    # Enable hot-reload in development
+    environment:
+      - PYTHONUNBUFFERED=1
+    # Mount entire app directory for live code reloading
+    volumes:
+      - ./app/server.py:/app/server.py:ro
+      - ./app/config.py:/app/config.py:ro
+    # Enable debug mode
+    command: uvicorn server:app --reload --host 0.0.0.0 --port 8000
+
+  nginx:
+    # In development, we can skip HTTPS and serve directly on HTTP
+    environment:
+      - INTERNAL_ALLOWED_IP=${INTERNAL_ALLOWED_IP:-}
+    ports:
+      - "80:80"
+    # Remove HTTPS port mapping if not using SSL in dev
+    # - "443:443"
