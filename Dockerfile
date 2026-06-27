@@ -32,9 +32,7 @@ COPY --from=builder /root/.local /home/appuser/.local
 ENV PATH=/home/appuser/.local/bin:$PATH
 
 # Copy application code
-COPY server.py .
-COPY templates/ ./templates/
-COPY static/ ./static/
+COPY app/* .
 COPY .env.example .
 
 # Set ownership
