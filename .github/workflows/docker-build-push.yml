@@ -2,7 +2,7 @@ name: Docker Build and Push to GHCR
 
 on:
   push:
-    tags: [ "v*" ]
+    branches: [ "main" ]
 
 env:
   REGISTRY: ghcr.io
