@@ -1,8 +1,10 @@
 import asyncio
 import signal
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.config import settings
@@ -25,12 +27,12 @@ async def lifespan(application: FastAPI):
     # below can never be reached (deadlock).
     def _make_handler(sig: int):
         # Grab uvicorn's already-registered asyncio handler so we can chain it.
-        existing = loop._signal_handlers.get(sig)
+        existing = loop._signal_handlers.get(sig)  # type: ignore[attr-defined]
 
         def _handler():
             broadcaster.close()
             if existing is not None:
-                existing._run()
+                existing._run()  # type: ignore[union-attr]
 
         return _handler
 
@@ -56,6 +58,9 @@ app = FastAPI(
 )
 
 app.add_middleware(SessionMiddleware, secret_key=settings.session_secret)
+
+_static_dir = Path(__file__).parent / "static"
+app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
 
 app.include_router(ingest.router)
 app.include_router(stream.router)

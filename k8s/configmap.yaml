@@ -11,3 +11,5 @@ data:
   JWT_ALGORITHM: "HS256"
   JWT_EXPIRE_MINUTES: "60"
   INTERNAL_API_KEY_HEADER: "X-Internal-API-Key"
+  # Set to a URL or /static/logo.svg (mount the file via a ConfigMap volume)
+  BRAND_LOGO_URL: ""

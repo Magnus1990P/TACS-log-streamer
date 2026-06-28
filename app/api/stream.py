@@ -92,5 +92,6 @@ async def index(request: Request, user=Depends(get_current_user_optional)):
             "providers": settings.configured_providers,
             "require_auth": settings.require_auth,
             "is_authenticated": user is not None,
+            "brand_logo_url": settings.brand_logo_url,
         },
     )

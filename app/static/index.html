@@ -47,9 +47,21 @@
       border-bottom: 1px solid var(--border);
       padding: 0 20px;
       height: 54px;
-      display: flex;
+      display: grid;
+      grid-template-columns: auto auto 1fr auto;
       align-items: center;
       gap: 16px;
+    }
+
+    .header-brand {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+    .header-brand img {
+      max-height: 36px;
+      max-width: 220px;
+      object-fit: contain;
     }
 
     .logo {
@@ -81,7 +93,6 @@
     @keyframes pulse { 50% { opacity: 0.2; } }
 
     .header-meta {
-      margin-left: auto;
       display: flex;
       gap: 24px;
       align-items: center;
@@ -258,6 +269,12 @@
   <div class="status-badge disconnected" id="statusBadge">
     <div class="dot" id="statusDot"></div>
     <span id="statusLabel">Offline</span>
+  </div>
+
+  <div class="header-brand">
+    {% if brand_logo_url %}
+    <img src="{{ brand_logo_url }}" alt="Logo" />
+    {% endif %}
   </div>
 
   <div class="header-meta">
