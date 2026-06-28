@@ -2,9 +2,12 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: tacs-log-streamer
+  namespace: tacs
   labels:
     app: tacs-log-streamer
 spec:
+  # SSE connections are held in-process — do not scale beyond 1 without
+  # adding a shared message bus (Redis Pub/Sub, etc.) first.
   replicas: 1
   selector:
     matchLabels:
@@ -15,34 +18,35 @@ spec:
         app: tacs-log-streamer
     spec:
       containers:
-      - name: tacs-log-streamer
-        image: ghcr.io/magnu/tacs-log-streamer:latest
-        imagePullPolicy: Always
-        ports:
-        - containerPort: 8000
-          name: http
-          protocol: TCP
-        envFrom:
-        - configMapRef:
-            name: tacs-log-streamer-config
-        - secretRef:
-            name: tacs-log-streamer-secrets
-        resources:
-          requests:
-            memory: "64Mi"
-            cpu: "50m"
-          limits:
-            memory: "256Mi"
-            cpu: "200m"
-        livenessProbe:
-          httpGet:
-            path: /health
-            port: 8000
-          initialDelaySeconds: 10
-          periodSeconds: 30
-        readinessProbe:
-          httpGet:
-            path: /health
-            port: 8000
-          initialDelaySeconds: 5
-          periodSeconds: 10
+        - name: tacs-log-streamer
+          image: ghcr.io/OWNER/tacs-log-streamer:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: tacs-log-streamer
+            - secretRef:
+                name: tacs-log-streamer
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 30
+      # Uncomment if the GHCR package is private:
+      # imagePullSecrets:
+      #   - name: ghcr-pull-secret

@@ -1,0 +1,30 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: tacs-log-streamer
+  namespace: tacs
+  annotations:
+    # SSE: disable response buffering and extend timeouts to keep streams alive
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    # TLS: issue a certificate via cert-manager (requires a ClusterIssuer named
+    # letsencrypt-prod — adjust to match your cluster's issuer name)
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - logs.example.com
+      secretName: tacs-log-streamer-tls
+  rules:
+    - host: logs.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: tacs-log-streamer
+                port:
+                  number: 80

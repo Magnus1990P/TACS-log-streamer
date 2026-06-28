@@ -2,21 +2,20 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: tacs-log-streamer-tailscale
-  labels:
-    app: tacs-log-streamer
+  namespace: tacs
+  annotations:
+    # Expose via Tailscale Funnel (public internet, no VPN required).
+    # Remove this annotation to restrict access to tailnet members only.
+    tailscale.com/funnel: "true"
 spec:
   ingressClassName: tailscale
-  rules:
-  - host: tacs-log-streamer
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: tacs-log-streamer
-            port:
-              number: 80
+  defaultBackend:
+    service:
+      name: tacs-log-streamer
+      port:
+        number: 80
   tls:
     - hosts:
+        # Becomes <name>.<tailnet>.ts.net — set to the desired MagicDNS prefix.
         - tacs-log-streamer
+      secretName: tacs-log-streamer-tailscale-tls

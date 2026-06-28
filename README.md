@@ -1,326 +1,273 @@
-# OAuth2 Secured Log Streamer
+# TACS Log Streamer
 
-A FastAPI server with OAuth2 authentication that receives log events on an internal endpoint and streams them to authenticated users via Server-Sent Events (SSE).
+Real-time access control log viewer. A FastAPI server receives log events from access control hardware, caches the last 200, and pushes them instantly to every connected browser via Server-Sent Events (SSE).
 
-## Features
-
-- **OAuth2 Authentication**: Supports Microsoft Entra ID (Azure AD) and Kanidm OIDC
-- **Two Endpoints**:
-  - `/internal`: Receives log events (no auth required, **INTERNAL ONLY**)
-  - `/public`: Authenticated streaming of log events to users
-- **Server-Sent Events (SSE)**: Real-time log streaming to authenticated clients
-- **JWT Tokens**: Secure token-based authentication
-- **Responsive UI**: Modern web interface with real-time updates
-- **Security**: Designed for secure deployment with only public endpoints exposed
-
-## Quick Start
-
-### 1. Install Dependencies
-
-```bash
-pip install -r requirements.txt
+```
+Access controller  ──POST /internal──▶  FastAPI  ──SSE /stream──▶  Browser
+                                           │
+                                     deque(maxlen=200)
+                                     (replayed to new clients)
 ```
 
-### 2. Configure OAuth2
+---
 
-Copy the example environment file and configure your OAuth2 providers:
+## Event types
 
-```bash
-copy .env.example .env
-```
+The `level` field of each event identifies the type. The UI classifies and colour-codes them automatically.
 
-Edit `.env` with your **Microsoft Entra ID** and **Kanidm OIDC** client credentials.
+| level value | Meaning |
+|---|---|
+| `ACCESS GRANTED` | Card / credential accepted, door released |
+| `ACCESS DENIED` | Card / credential rejected |
+| `SYSTEM ERROR` | Controller or reader fault |
+| `READER HEARTBEAT` | Periodic alive ping from a reader |
+| *(anything else)* | Displayed as **Other** |
 
-**Microsoft Setup:**
-- Register app at: https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/NewApplication
-- Set redirect URI: `https://your-domain.com/auth/callback`
+---
 
-**Kanidm Setup:**
-- Configure OIDC client in your Kanidm server
-- Set redirect URI: `https://your-domain.com/auth/callback`
-- Required scopes: `openid email profile`
+## Log event format
 
-### 3. Run the Server
+Events are sent as JSON to `POST /internal`.
 
-```bash
-python server.py
-```
-
-Or with uvicorn directly:
-
-```bash
-uvicorn server:app --reload --port 8000
-```
-
-### 4. Access the Application
-
-- **Public Page**: `http://localhost:8000/public` (safe to expose publicly)
-- **Health Check**: `http://localhost:8000/health` (safe to expose publicly)
-- **Internal API**: `POST http://localhost:8000/internal` (**DO NOT expose publicly**)
-
-## Endpoints
-
-### Internal Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/internal` | Receive log events (API key authentication optional) |
-
-**Request Body for `/internal`:**
 ```json
 {
-    "level": "INFO",
-    "message": "Application started",
-    "source": "my-app",
-    "tags": ["startup", "system"]
+  "level":     "ACCESS GRANTED",
+  "message":   "Card read: John Doe",
+  "source":    "door-01",
+  "timestamp": "2026-06-27T12:34:56.789Z",
+  "tags":      ["building-a", "floor-2"]
 }
 ```
 
-### Public Endpoints (Require OAuth2 Auth)
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `level` | string | yes | Event type — see table above |
+| `message` | string | yes | Human-readable description |
+| `source` | string | no | Reader / controller ID |
+| `timestamp` | ISO 8601 string | no | Server assigns UTC time if omitted |
+| `tags` | string array | no | Arbitrary labels, stored but not displayed |
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/public` | Web interface for log streaming |
-| GET | `/public/stream?token=...` | SSE endpoint for streaming logs |
-| GET | `/public/userinfo` | Get current user information |
-| GET | `/auth/login/{provider}` | Initiate OAuth2 login flow |
-| GET | `/auth/callback` | OAuth2 callback handler |
-| GET | `/health` | Health check endpoint |
-
-### OAuth2 Flow
-
-1. User visits `/public`
-2. Clicks "Sign in with [Provider]" 
-3. Redirected to `/auth/login/{provider}`
-4. Redirected to OAuth2 provider's authorization page
-5. After authentication, redirected to `/auth/callback`
-6. Server creates JWT token and redirects to `/public?token=...`
-7. Client connects to `/public/stream?token=...` for SSE
-
-## Usage Examples
-
-### Send Log Events (cURL)
+### Example — send an event with curl
 
 ```bash
-# Single log event (without API key - for development)
 curl -X POST http://localhost:8000/internal \
   -H "Content-Type: application/json" \
-  -d '{"level": "INFO", "message": "Hello World", "source": "test-app"}'
-
-# Single log event with API key (for production)
-curl -X POST http://localhost:8000/internal \
-  -H "Content-Type: application/json" \
-  -H "X-Internal-API-Key: your-api-key-here" \
-  -d '{"level": "INFO", "message": "Hello World", "source": "test-app"}'
-
+  -H "X-Internal-API-Key: your-secret-key" \
+  -d '{
+    "level":   "READER HEARTBEAT",
+    "message": "ping",
+    "source":  "reader-05"
+  }'
 ```
 
-### Connect to Log Stream (JavaScript)
+---
 
-```javascript
-// After OAuth2 authentication
-const accessToken = 'your-jwt-token';
+## Project structure
 
-// Connect to SSE stream
-const eventSource = new EventSource(`/public/stream?token=${encodeURIComponent(accessToken)}`);
-
-eventSource.onmessage = function(event) {
-    const logData = JSON.parse(event.data);
-    console.log('New log:', logData);
-    
-    // Handle keep-alive messages
-    if (logData.keepalive) {
-        return;
-    }
-    
-    // Process log data
-    console.log(`[${logData.timestamp}] ${logData.level} ${logData.message}`);
-};
-
-eventSource.onerror = function(error) {
-    console.error('Connection error:', error);
-    // Implement reconnection logic
-};
+```
+TACS-log-streamer/
+├── app/
+│   ├── main.py               # App factory, lifespan, health endpoint
+│   ├── config.py             # All settings (env vars via pydantic-settings)
+│   ├── models/
+│   │   └── log.py            # LogEvent pydantic model
+│   ├── core/
+│   │   ├── cache.py          # EventCache — asyncio-safe deque(maxlen=200)
+│   │   └── broadcaster.py    # Fan-out SSE events to all connected clients
+│   ├── api/
+│   │   ├── ingest.py         # POST /internal
+│   │   ├── stream.py         # GET /stream (SSE) and GET / (UI)
+│   │   └── auth.py           # OAuth2 routes — Microsoft Entra ID, Kanidm
+│   └── static/
+│       └── index.html        # Single-page log viewer (Jinja2 template)
+├── Dockerfile
+├── docker-compose.yml
+├── requirements.txt
+└── .env.example
 ```
 
-### Get User Information
+---
+
+## Running locally
+
+**Requires Python 3.12+**
 
 ```bash
-curl http://localhost:8000/public/userinfo \
-  -H "Authorization: Bearer your-jwt-token"
+# 1 — install dependencies
+pip install -r requirements.txt
+
+# 2 — configure (copy and edit)
+cp .env.example .env
+
+# 3 — start
+uvicorn app.main:app --reload --port 8000
 ```
 
-## Project Structure
+Open `http://localhost:8000` — the stream starts immediately. No sign-in is required by default (`REQUIRE_AUTH=false`).
 
-```
-OIDC testsite/
-├── server.py           # Main FastAPI application (Microsoft + Kanidm)
-├── main.py            # Simple version (standalone, mock auth for dev)
-├── config.py          # Configuration management
-├── requirements.txt   # Python dependencies
-├── .env.example       # Environment configuration template
-├── DEPLOYMENT.md      # Detailed deployment guide
-├── templates/
-│   └── index.html     # Web interface
-├── static/            # Static files (CSS, JS, images)
-└── README.md          # This file
-```
+---
 
-## Configuration Options
+## Configuration
 
-### Environment Variables
+All settings are read from environment variables (or a `.env` file).
+
+### Server
 
 | Variable | Default | Description |
-|----------|---------|-------------|
-| `PORT` | 8000 | Server port |
-| `HOST` | 0.0.0.0 | Server host |
-| `JWT_SECRET_KEY` | - | Secret key for JWT signing |
-| `JWT_ALGORITHM` | HS256 | JWT algorithm (HS256, RS256) |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | 60 | Token expiration time |
-| `INTERNAL_API_KEY` | - | Static API key for /internal endpoint (optional) |
-| `INTERNAL_API_KEY_HEADER` | X-Internal-API-Key | Header name for API key |
-| `MICROSOFT_CLIENT_ID` | - | Microsoft Entra ID client ID |
-| `MICROSOFT_CLIENT_SECRET` | - | Microsoft Entra ID client secret |
-| `KANIDM_CLIENT_ID` | - | Kanidm OIDC client ID |
-| `KANIDM_CLIENT_SECRET` | - | Kanidm OIDC client secret |
-| `KANIDM_AUTHORIZE_URL` | - | Kanidm OAuth2 authorize URL |
-| `KANIDM_TOKEN_URL` | - | Kanidm OAuth2 token URL |
-| `KANIDM_JWKS_URI` | - | Kanidm JWKS URI |
-| `KANIDM_ISSUER` | - | Kanidm issuer URL |
+|---|---|---|
+| `HOST` | `0.0.0.0` | Bind address |
+| `PORT` | `8000` | Bind port |
+| `CACHE_MAX_EVENTS` | `200` | Number of events kept in memory and replayed to new clients |
 
-## Security Considerations
+### Ingest authentication
 
-1. **JWT Secret Key**: Always use a strong, random secret key in production
-2. **HTTPS**: Always use HTTPS in production to protect tokens in transit
-3. **CORS**: Configure CORS properly for your production environment
-4. **Token Storage**: Store tokens securely (HttpOnly cookies for web apps)
-5. **CSRF Protection**: The OAuth2 flow includes state parameter for CSRF protection
-6. **Input Validation**: All inputs are validated using Pydantic models
-7. **Internal Endpoint**: Configure `INTERNAL_API_KEY` to protect the `/internal` endpoint
+| Variable | Default | Description |
+|---|---|---|
+| `INTERNAL_API_KEY` | *(empty)* | If set, `POST /internal` requires this key in the header. Leave empty to allow all senders (development only). |
+| `INTERNAL_API_KEY_HEADER` | `X-Internal-API-Key` | Header name for the key above |
 
-### Internal Endpoint Security
+Generate a strong key: `openssl rand -hex 32`
 
-The `/internal` endpoint now supports **optional static API key authentication**:
+### Stream authentication
 
-- **Development mode**: If `INTERNAL_API_KEY` is not set, the endpoint accepts all requests
-- **Production mode**: Set `INTERNAL_API_KEY` to require API key authentication via the `X-Internal-API-Key` header
-- **Generate a strong key**: `openssl rand -hex 32`
+| Variable | Default | Description |
+|---|---|---|
+| `REQUIRE_AUTH` | `false` | Set to `true` to require an OAuth2 session before the SSE stream is served |
+| `SESSION_SECRET` | *must change* | Session cookie signing key |
+| `JWT_SECRET` | *must change* | Signing key for the short-lived JWT issued after OAuth2 |
+| `JWT_ALGORITHM` | `HS256` | JWT algorithm |
+| `JWT_EXPIRE_MINUTES` | `60` | JWT lifetime |
 
-### TLS/HTTPS
+### OAuth2 — Microsoft Entra ID
 
-**Always use HTTPS in production.** Options:
+| Variable | Description |
+|---|---|
+| `MICROSOFT_CLIENT_ID` | App registration client ID |
+| `MICROSOFT_CLIENT_SECRET` | App registration client secret |
 
-1. **Reverse Proxy (Recommended)**: Use Nginx, Apache, or Traefik with SSL termination
-2. **Direct Uvicorn**: `uvicorn server:app --ssl-keyfile key.pem --ssl-certfile cert.pem`
-3. **Hypercorn**: `hypercorn server:app --keyfile key.pem --certfile cert.pem`
+Register the app at the Azure portal and set the redirect URI to `https://your-domain/auth/callback`.
 
-See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed TLS configuration.
+### OAuth2 — Kanidm
 
-## Development
+| Variable | Default | Description |
+|---|---|---|
+| `KANIDM_CLIENT_ID` | | OAuth2 client name as registered in Kanidm |
+| `KANIDM_CLIENT_SECRET` | | Client secret (`kanidm system oauth2 show-basic-secret <name>`) |
+| `KANIDM_BASE_URL` | `https://kanidm.example.com` | Base URL of your Kanidm instance — all endpoints are discovered automatically via OIDC discovery |
 
-For development without OAuth2 providers, the server includes mock authentication:
+Required scopes: `openid email profile`. Set the redirect URI to `https://your-domain/auth/callback`.
 
-```javascript
-// In the web interface, click "Connect with Mock Token"
-// This creates a development token that allows testing
+---
+
+## API endpoints
+
+### Public (safe to expose)
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/` | Log viewer UI |
+| `GET` | `/stream` | SSE stream — replays last 200 events then goes live |
+| `GET` | `/stream?token=<jwt>` | SSE stream with JWT auth (used when `REQUIRE_AUTH=true`) |
+| `GET` | `/auth/login/microsoft` | Start Microsoft OAuth2 flow |
+| `GET` | `/auth/login/kanidm` | Start Kanidm OAuth2 flow |
+| `GET` | `/auth/callback` | OAuth2 redirect handler |
+| `GET` | `/auth/logout` | Clear session |
+| `GET` | `/health` | Status, connection count, cached event count |
+
+### Internal (never expose publicly)
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/internal` | Ingest a log event |
+
+### Health response
+
+```json
+{
+  "status": "ok",
+  "connections": 3,
+  "cached_events": 187,
+  "require_auth": false,
+  "providers": ["microsoft"]
+}
 ```
 
-## Production Deployment
+---
 
-For production, consider:
+## Deploy with Docker
 
-1. **Use ASGI Server**: `uvicorn server:app --workers 4 --host 0.0.0.0 --port 80`
-2. **Reverse Proxy**: Use Nginx or Apache as reverse proxy with HTTPS
-3. **Environment Variables**: Set all sensitive configuration via environment variables
-4. **Monitoring**: Add monitoring for the log queue and active connections
-5. **Rate Limiting**: Consider adding rate limiting to prevent abuse
-
-### 🔒 Important: Secure Deployment
-
-**Only expose these endpoints publicly:**
-- `/public*` - Web interface and authenticated streaming
-- `/auth*` - OAuth2 authentication flow
-- `/health` - Health check
-- `/` - Redirects to /public
-
-**Keep these endpoints internal-only:**
-- `/internal` - Log ingestion (configure `INTERNAL_API_KEY` for authentication)
-
-**See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed deployment instructions.**
-
-### Recommended Setup
-
-```
-Internet → [Reverse Proxy: Nginx/Apache/Traefik] → FastAPI Server
-                      ↑
-                 [HTTPS Termination]
-                 [Path-based Routing]
-                 [Blocks /internal* from public]
-
-Internal Network → FastAPI Server:8000/internal (allowed)
-```
-
-For complete deployment guide with Nginx, Apache, Docker, Kubernetes, and cloud provider examples, see **[DEPLOYMENT.md](DEPLOYMENT.md)**.
-
-## Testing
-
-### Manual Testing
-
-1. Start the server: `python server.py`
-2. Open browser: `http://localhost:8000/public`
-3. Click "Connect with Mock Token"
-4. Click "Send Test Log" to generate test logs
-5. Watch logs appear in real-time
-
-### API Testing with cURL
+### Build and run
 
 ```bash
-# Send a test log
-curl -X POST http://localhost:8000/internal \
-  -H "Content-Type: application/json" \
-  -d '{"level": "INFO", "message": "Test message", "source": "curl"}'
+# copy and fill in secrets
+cp .env.example .env
 
-# Check health
-curl http://localhost:8000/health
+docker compose up -d
 ```
 
-## Alternatives
+The container exposes port `8000`. Place a reverse proxy (Nginx, Traefik, Caddy) in front of it for TLS termination.
 
-### Simple Version (No External Dependencies)
+### Dockerfile summary
 
-The `main.py` file contains a simpler version that doesn't require Authlib:
+- Base image: `python:3.12-slim`
+- Copies `requirements.txt` and `app/` only
+- Starts: `uvicorn app.main:app --host 0.0.0.0 --port 8000`
 
-```bash
-python main.py
+### docker-compose.yml
+
+```yaml
+services:
+  log-streamer:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 ```
 
-This version uses mock OAuth2 authentication for development.
+### Reverse proxy — Nginx example
 
-## Troubleshooting
+Keep `/internal` off the internet. Only forward the public routes:
 
-### Common Issues
+```nginx
+server {
+    listen 443 ssl;
+    server_name logs.example.com;
 
-1. **OAuth2 not working**: Ensure your callback URLs are registered with the provider
-2. **CORS errors**: Configure CORS properly or use same origin
-3. **Connection issues**: Check that the server is running and accessible
-4. **Token errors**: Verify your JWT secret key matches across instances
+    # block the ingest endpoint from the public internet
+    location /internal {
+        deny all;
+    }
 
-### Debug Mode
+    location / {
+        proxy_pass         http://127.0.0.1:8000;
+        proxy_set_header   Host $host;
+        proxy_set_header   X-Real-IP $remote_addr;
 
-Add `--reload` flag to uvicorn for automatic reloads during development:
-
-```bash
-uvicorn server:app --reload --port 8000
+        # required for SSE — disable proxy buffering
+        proxy_buffering    off;
+        proxy_cache        off;
+        proxy_read_timeout 3600s;
+    }
+}
 ```
 
-## License
+Access control hardware on the internal network sends directly to `http://app-host:8000/internal`, bypassing the proxy entirely.
 
-MIT License
+---
 
-## Contributing
+## Security checklist
 
-1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Open a pull request
+- [ ] Set strong random values for `SESSION_SECRET` and `JWT_SECRET` in production
+- [ ] Set `INTERNAL_API_KEY` so only authorised senders can ingest events
+- [ ] Block `/internal` at the reverse proxy (see Nginx example above)
+- [ ] Terminate TLS at the reverse proxy — never run plain HTTP on the public internet
+- [ ] Set `REQUIRE_AUTH=true` if the log stream should not be publicly visible
+- [ ] Use HTTPS callback URIs when registering OAuth2 apps with providers
