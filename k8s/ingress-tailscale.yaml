@@ -6,7 +6,7 @@ metadata:
   annotations:
     # Expose via Tailscale Funnel (public internet, no VPN required).
     # Remove this annotation to restrict access to tailnet members only.
-    tailscale.com/funnel: "true"
+    #tailscale.com/funnel: "true"
 spec:
   ingressClassName: tailscale
   defaultBackend:
