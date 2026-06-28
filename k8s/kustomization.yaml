@@ -1,0 +1,16 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: tacs
+
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - secret.yaml      # gitignored — must exist locally before applying
+  - deployment.yaml
+  - service.yaml
+  - ingress-tailscale.yaml
+
+images:
+  - name: ghcr.io/magnus1990p/tacs-log-streamer
+    newTag: latest

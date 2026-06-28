@@ -170,7 +170,7 @@
     /* Column layout: time | badge | source | message */
     .log-row {
       display: grid;
-      grid-template-columns: 82px 160px 140px 1fr;
+      grid-template-columns: 152px 160px 140px 1fr;
       gap: 0 12px;
       padding: 5px 20px;
       border-bottom: 1px solid #1a2232;
@@ -264,6 +264,9 @@
     <div>Events &nbsp;<strong id="statTotal">0</strong></div>
     <div>Clients &nbsp;<strong id="statClients">—</strong></div>
     <div id="clock"></div>
+    {% if is_authenticated %}
+    <a href="/auth/logout" class="btn">Sign out</a>
+    {% endif %}
   </div>
 </header>
 
@@ -366,8 +369,8 @@
 
     const type = classify(ev.level);
     const ts   = ev.timestamp
-      ? new Date(ev.timestamp).toISOString().slice(11, 19)
-      : new Date().toISOString().slice(11, 19);
+      ? new Date(ev.timestamp).toISOString().replace('T', ' ').slice(0, 19)
+      : new Date().toISOString().replace('T', ' ').slice(0, 19);
 
     const row = document.createElement('div');
     row.className = `log-row type-${type}`;
@@ -380,15 +383,15 @@
       `<span class="log-msg">${escapeHtml(ev.message || '')}</span>`;
 
     applyRowVisibility(row);
-    logPane.appendChild(row);
-    if (autoScroll) logPane.scrollTop = logPane.scrollHeight;
+    logPane.prepend(row);
+    if (autoScroll) logPane.scrollTop = 0;
   }
 
   function appendSep(text) {
     const sep = document.createElement('div');
     sep.className = 'history-sep';
     sep.textContent = text;
-    logPane.appendChild(sep);
+    logPane.prepend(sep);
   }
 
   function removeEmpty() {
@@ -431,7 +434,7 @@
 
   // --- Auto-scroll ---
   logPane.addEventListener('scroll', () => {
-    autoScroll = logPane.scrollTop + logPane.clientHeight >= logPane.scrollHeight - 40;
+    autoScroll = logPane.scrollTop <= 40;
   });
 
   // --- Stats poll ---

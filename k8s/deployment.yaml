@@ -19,7 +19,7 @@ spec:
     spec:
       containers:
         - name: tacs-log-streamer
-          image: ghcr.io/OWNER/tacs-log-streamer:latest
+          image: ghcr.io/magnus1990p/tacs-log-streamer:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 8000
