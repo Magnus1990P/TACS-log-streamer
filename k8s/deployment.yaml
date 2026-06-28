@@ -47,6 +47,15 @@ spec:
               port: 8000
             initialDelaySeconds: 15
             periodSeconds: 30
+          volumeMounts:
+            - name: logo
+              mountPath: /app/app/static/logo.svg
+              subPath: logo.svg
+              readOnly: true
+      volumes:
+        - name: logo
+          configMap:
+            name: tacs-log-streamer-logo
       # Uncomment if the GHCR package is private:
       # imagePullSecrets:
       #   - name: ghcr-pull-secret

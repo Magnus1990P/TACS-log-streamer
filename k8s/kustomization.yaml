@@ -6,6 +6,7 @@ namespace: tacs
 resources:
   - namespace.yaml
   - configmap.yaml
+  - configmap-logo.yaml
   - secret.yaml      # gitignored — must exist locally before applying
   - deployment.yaml
   - service.yaml
